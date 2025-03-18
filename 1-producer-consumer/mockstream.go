@@ -30,7 +30,6 @@ var ErrEOF = errors.New("End of File")
 // Next returns the next Tweet in the stream, returns EOF error if
 // there are no more tweets
 func (s *Stream) Next() (*Tweet, error) {
-
 	// simulate delay
 	time.Sleep(320 * time.Millisecond)
 	if s.pos >= len(s.tweets) {

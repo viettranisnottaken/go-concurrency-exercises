@@ -9,23 +9,31 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"sync"
 	"time"
 )
 
-func producer(stream Stream) (tweets []*Tweet) {
+func producer(stream Stream, msq chan<- *Tweet) {
+	defer close(msq)
+
+	// because of the way stream.Next is implemented, we cannot parallelize producer
+	// If we use goroutines here, we need to use Mutex, which kinda defeats the point
 	for {
 		tweet, err := stream.Next()
-		if err == ErrEOF {
-			return tweets
+		if errors.Is(err, ErrEOF) {
+			return
 		}
 
-		tweets = append(tweets, tweet)
+		msq <- tweet
 	}
 }
 
-func consumer(tweets []*Tweet) {
-	for _, t := range tweets {
+func consumer(msq <-chan *Tweet, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	for t := range msq {
 		if t.IsTalkingAboutGo() {
 			fmt.Println(t.Username, "\ttweets about golang")
 		} else {
@@ -34,15 +42,22 @@ func consumer(tweets []*Tweet) {
 	}
 }
 
-func main() {
+func Run() {
 	start := time.Now()
 	stream := GetMockStream()
+	msq := make(chan *Tweet)
+	var wg sync.WaitGroup
 
 	// Producer
-	tweets := producer(stream)
+	go producer(stream, msq)
 
 	// Consumer
-	consumer(tweets)
+	for i := 0; i < 3; i++ { // parallelize consumers
+		wg.Add(1)
+		go consumer(msq, &wg)
+	}
+
+	wg.Wait()
 
 	fmt.Printf("Process took %s\n", time.Since(start))
 }
