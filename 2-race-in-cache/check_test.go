@@ -12,19 +12,19 @@ import (
 	"testing"
 )
 
-func TestMain(t *testing.T) {
+func TestRaceInCache(t *testing.T) {
 	cache, db := run(t)
 
 	cacheLen := len(cache.cache)
 	pagesLen := cache.pages.Len()
 	if cacheLen != CacheSize {
-		t.Errorf("Incorrect cache size %v", cacheLen)
+		t.Errorf("Incorrect cache size %v, expecting %v", cacheLen, CacheSize)
 	}
 	if pagesLen != CacheSize {
-		t.Errorf("Incorrect pages size %v", pagesLen)
+		t.Errorf("Incorrect pages size %v, expecting %v", pagesLen, CacheSize)
 	}
 	if db.Calls > callsPerCycle {
-		t.Errorf("Too much db uses %v", db.Calls)
+		t.Errorf("Too much db uses %v, expecting %v", db.Calls, callsPerCycle)
 	}
 }
 
@@ -39,7 +39,7 @@ func TestLRU(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			value := cache.Get("Test" + strconv.Itoa(i))
-			if value != "Test" + strconv.Itoa(i) {
+			if value != "Test"+strconv.Itoa(i) {
 				t.Errorf("Incorrect db response %v", value)
 			}
 			wg.Done()
