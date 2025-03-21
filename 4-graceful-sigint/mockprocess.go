@@ -7,7 +7,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -15,7 +14,7 @@ import (
 
 // MockProcess for example
 type MockProcess struct {
-	mu sync.Mutex
+	mu        sync.Mutex
 	isRunning bool
 }
 
@@ -25,9 +24,9 @@ func (m *MockProcess) Run() {
 	m.isRunning = true
 	m.mu.Unlock()
 
-	fmt.Print("Process running..")
-	for {
-		fmt.Print(".")
+	log.Println("Process running..")
+	for m.isRunning {
+		log.Println(".")
 		time.Sleep(1 * time.Second)
 	}
 }
@@ -41,9 +40,11 @@ func (m *MockProcess) Stop() {
 		log.Fatal("Cannot stop a process which is not running")
 	}
 
-	fmt.Print("\nStopping process..")
-	for {
-		fmt.Print(".")
-		time.Sleep(1 * time.Second)
-	}
+	m.isRunning = false
+
+	log.Println("\nStopping process..")
+	//for {
+	//	fmt.Print(".")
+	//	time.Sleep(1 * time.Second)
+	//}
 }
