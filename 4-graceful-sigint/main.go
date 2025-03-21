@@ -13,10 +13,41 @@
 
 package main
 
+import (
+	"context"
+	"log"
+	"os/signal"
+	"syscall"
+	"time"
+)
+
+func gracefulShutdown(proc *MockProcess, done chan<- struct{}) {
+	sigint, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGKILL)
+	defer stop()
+
+	<-sigint.Done()
+
+	log.Println("Shutting down gracefully")
+
+	timeout, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	log.Println("Waiting 5 seconds for things to settle down")
+	<-timeout.Done()
+
+	proc.Stop()
+
+	log.Println("Shut down")
+	done <- struct{}{}
+}
+
 func main() {
 	// Create a process
 	proc := MockProcess{}
+	done := make(chan struct{}, 1)
+	go gracefulShutdown(&proc, done)
 
 	// Run the process (blocking)
 	proc.Run()
+	<-done
 }
