@@ -18,19 +18,25 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log"
+	"sync"
+	"time"
 )
 
 // SessionManager keeps track of all sessions from creation, updating
 // to destroying.
 type SessionManager struct {
 	sessions map[string]Session
+	mu       sync.Mutex
 }
 
 // Session stores the session's data
 type Session struct {
-	Data map[string]interface{}
+	Data     map[string]interface{}
+	Lifespan time.Duration
+	Abort    chan bool
 }
 
 // NewSessionManager creates a new sessionManager
@@ -42,16 +48,30 @@ func NewSessionManager() *SessionManager {
 	return m
 }
 
+func NewSession(data map[string]interface{}) Session {
+	lifespan := time.Second * 6
+
+	return Session{
+		Data:     data,
+		Lifespan: lifespan,
+		Abort:    make(chan bool),
+	}
+}
+
 // CreateSession creates a new session and returns the sessionID
 func (m *SessionManager) CreateSession() (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	sessionID, err := MakeSessionID()
 	if err != nil {
 		return "", err
 	}
 
-	m.sessions[sessionID] = Session{
-		Data: make(map[string]interface{}),
-	}
+	sess := NewSession(make(map[string]interface{}))
+	m.sessions[sessionID] = sess
+
+	go m.Cleanup(m.sessions[sessionID].Abort, sessionID)
 
 	return sessionID, nil
 }
@@ -63,6 +83,9 @@ var ErrSessionNotFound = errors.New("SessionID does not exists")
 // GetSessionData returns data related to session if sessionID is
 // found, errors otherwise
 func (m *SessionManager) GetSessionData(sessionID string) (map[string]interface{}, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	session, ok := m.sessions[sessionID]
 	if !ok {
 		return nil, ErrSessionNotFound
@@ -72,17 +95,45 @@ func (m *SessionManager) GetSessionData(sessionID string) (map[string]interface{
 
 // UpdateSessionData overwrites the old session data with the new one
 func (m *SessionManager) UpdateSessionData(sessionID string, data map[string]interface{}) error {
-	_, ok := m.sessions[sessionID]
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	sess, ok := m.sessions[sessionID]
 	if !ok {
 		return ErrSessionNotFound
 	}
 
 	// Hint: you should renew expiry of the session here
-	m.sessions[sessionID] = Session{
-		Data: data,
-	}
+	sess.Abort <- true
+
+	m.sessions[sessionID] = NewSession(data)
+
+	go m.Cleanup(m.sessions[sessionID].Abort, sessionID)
 
 	return nil
+}
+
+func (m *SessionManager) Cleanup(abort <-chan bool, sid string) {
+	sess, ok := m.sessions[sid]
+
+	if !ok {
+		return
+	}
+
+	withTimeout, cancel := context.WithTimeout(context.Background(), sess.Lifespan)
+	defer cancel()
+
+	select {
+	case <-withTimeout.Done():
+		m.mu.Lock()
+		defer m.mu.Unlock()
+
+		delete(m.sessions, sid)
+		return
+	case <-abort:
+		cancel()
+		return
+	}
 }
 
 func main() {
